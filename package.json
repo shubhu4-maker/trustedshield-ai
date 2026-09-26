@@ -1,0 +1,18 @@
+gi{
+  "name": "trustshield-ai",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "TrustShield AI — Privacy-First Scam Detection & Threat Intelligence Platform",
+  "scripts": {
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "test:validation": "node server/test-validation.js",
+    "test:threats": "node server/test-threat-workflows.js",
+    "test": "npm run test:validation && npm run test:threats",
+    "db:migrate": "npm run migrate --prefix server",
+    "db:seed": "npm run db:seed --prefix server"
+  }
+}
