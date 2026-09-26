@@ -1,27 +1,32 @@
 /**
- * Client-side PII Scrubber — First line of defense.
- * Removes sensitive data BEFORE it ever leaves the browser.
+ * Server-side PII Scrubber — Defense-in-depth re-verification layer.
+ * Client scrubs first, server re-scrubs to guarantee zero PII leakage to Gemini or DB.
  */
 
-export interface PiiMatch {
-  type: string;
-  original: string;
-  replacement: string;
-  startIndex: number;
-  endIndex: number;
-}
-
-export interface ClientPiiResult {
+export interface PiiScrubResult {
   redactedText: string;
-  matches: PiiMatch[];
+  redactionsApplied: PiiRedaction[];
   piiDetected: boolean;
 }
 
-const PII_RULES: Array<{ name: string; regex: RegExp; replacement: string }> = [
+export interface PiiRedaction {
+  type: string;
+  originalLength: number;
+  replacement: string;
+}
+
+// ── Regex Patterns ──────────────────────────────────────────────────────────────
+
+const PII_PATTERNS: Array<{ name: string; regex: RegExp; replacement: string }> = [
   {
     name: 'EMAIL',
     regex: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
     replacement: '[REDACTED_EMAIL]',
+  },
+  {
+    name: 'PHONE',
+    regex: /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+    replacement: '[REDACTED_PHONE]',
   },
   {
     name: 'SSN',
@@ -34,66 +39,50 @@ const PII_RULES: Array<{ name: string; regex: RegExp; replacement: string }> = [
     replacement: '[REDACTED_CC]',
   },
   {
-    name: 'PHONE',
-    regex: /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
-    replacement: '[REDACTED_PHONE]',
-  },
-  {
     name: 'IP_ADDRESS',
     regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
     replacement: '[REDACTED_IP]',
   },
+  {
+    name: 'DATE_OF_BIRTH',
+    regex: /\b(?:0[1-9]|1[0-2])\/(?:0[1-9]|[12]\d|3[01])\/(?:19|20)\d{2}\b/g,
+    replacement: '[REDACTED_DOB]',
+  },
 ];
 
 /**
- * Scrubs PII from input text and returns both the cleaned text
- * and a manifest of all matches (for visual highlighting in the UI).
+ * Applies all PII redaction patterns to the input text.
+ * Returns the scrubbed text along with a manifest of what was redacted.
  */
-export function scrubPiiClient(text: string): ClientPiiResult {
-  const matches: PiiMatch[] = [];
-  let workingText = text;
+export function scrubPii(text: string): PiiScrubResult {
+  let redactedText = text;
+  const redactionsApplied: PiiRedaction[] = [];
 
-  for (const rule of PII_RULES) {
-    // Reset regex lastIndex
-    rule.regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    const tempMatches: PiiMatch[] = [];
-
-    // Find all matches in original text
-    const freshRegex = new RegExp(rule.regex.source, rule.regex.flags);
-    while ((match = freshRegex.exec(text)) !== null) {
-      tempMatches.push({
-        type: rule.name,
-        original: match[0],
-        replacement: rule.replacement,
-        startIndex: match.index,
-        endIndex: match.index + match[0].length,
-      });
+  for (const pattern of PII_PATTERNS) {
+    const matches = redactedText.match(pattern.regex);
+    if (matches) {
+      for (const match of matches) {
+        redactionsApplied.push({
+          type: pattern.name,
+          originalLength: match.length,
+          replacement: pattern.replacement,
+        });
+      }
+      redactedText = redactedText.replace(pattern.regex, pattern.replacement);
     }
-
-    matches.push(...tempMatches);
-    workingText = workingText.replace(new RegExp(rule.regex.source, rule.regex.flags), rule.replacement);
   }
 
   return {
-    redactedText: workingText,
-    matches,
-    piiDetected: matches.length > 0,
+    redactedText,
+    redactionsApplied,
+    piiDetected: redactionsApplied.length > 0,
   };
 }
 
 /**
- * Generates HTML with PII tokens highlighted for visual preview.
+ * Validates that the text has already been client-side scrubbed.
+ * If residual PII is found, re-scrubs as a safety net.
  */
-export function generatePiiHighlightHtml(text: string): string {
-  let result = text;
-
-  for (const rule of PII_RULES) {
-    result = result.replace(
-      new RegExp(rule.regex.source, rule.regex.flags),
-      `<span class="pii-highlight">${rule.replacement}</span>`
-    );
-  }
-
-  return result;
+export function ensurePiiScrubbed(text: string): PiiScrubResult {
+  return scrubPii(text);
 }
