@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Info,
 } from 'lucide-react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../utils/supabaseClient';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 const NAV_LINKS = [
@@ -64,6 +64,12 @@ export default function Navbar() {
     setAuthError('');
     setAuthLoading(true);
 
+    if (!isSupabaseConfigured) {
+      setAuthError('Supabase is not configured on this deployment. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Vercel Project Settings → Environment Variables and redeploy.');
+      setAuthLoading(false);
+      return;
+    }
+
     try {
       if (authMode === 'signup') {
         const { error } = await supabase.auth.signUp({
@@ -87,7 +93,14 @@ export default function Navbar() {
         setAuthPassword('');
       }
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed.');
+      const msg = err.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('fetch')) {
+        setAuthError('Connection to Supabase failed ("Failed to fetch"). Please verify that VITE_SUPABASE_URL is configured in your Vercel Environment Variables and that Supabase is accessible.');
+      } else if (msg.includes('rate limit')) {
+        setAuthError('Email rate limit exceeded. In your Supabase Dashboard, go to Authentication → Providers → Email and disable "Confirm email" for instant login.');
+      } else {
+        setAuthError(msg || 'Authentication failed.');
+      }
     } finally {
       setAuthLoading(false);
     }
